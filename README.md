@@ -54,7 +54,7 @@ npm run package
 npm run verify:package
 ```
 
-生成的模块包和 SHA256 校验文件位于 `dist/`。发布 ZIP 只允许包含 11 个明确列出的模块文件，运行时配置、缓存和日志不会进入安装包。
+生成的模块包和 SHA256 校验文件位于 `dist/`。
 
 ## 许可证
 
