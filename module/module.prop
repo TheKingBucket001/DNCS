@@ -1,0 +1,7 @@
+id=dncs
+name=DNCS
+version=0.1.0-beta.1
+versionCode=1
+author=Bucket
+description=通过模块 WebUI 按 UID 控制 Android 应用断网
+webuiIcon=webroot/icon.svg

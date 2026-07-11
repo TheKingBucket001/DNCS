@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+
+# build outputs
+/dist/*.zip
+/dist/*.sha256
+/module/webroot/*
+!/module/webroot/.gitkeep
+/module/webroot/assets/main.js.map
+
+# DNCS runtime files
+/module/scripts/blocked.conf
+/module/scripts/blocked.conf.bak
+/module/scripts/debug.flag
+/module/scripts/boot-info.mark
+/module/scripts/.dncs.lock/
+/module/scripts/.dncs.lock
+/module/scripts/.dncs.lock.stale.*
+/module/scripts/.dncs.lock.release.*
+/module/scripts/.dncs.txn
+/module/scripts/.dncs.txn.*.tmp
+/module/scripts/*.tmp
+/module/scripts/*.new
+/module/scripts/*.preserve.*
+/module/scripts/ipt_err.*
+/module/scripts/ipt_out.*
+/module/scripts/user.tmp*
+/module/scripts/users.tmp*
+/module/scripts/package.tmp*
+/module/scripts/config_uids.*
+/module/webroot/apps.txt
+/module/webroot/apps.txt.*.tmp
+/module/webroot/dncs.log
+/module/webroot/dncs.log.old
+/module/webroot/*.log
+
+# local/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.local
