@@ -1,6 +1,6 @@
 {
   "name": "dncs-kernelsu-module",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "description": "通过 UID 级双栈防火墙规则控制 Android 应用联网的 Root 模块。",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -9,8 +9,9 @@
     "build": "node scripts/build.mjs",
     "package": "node scripts/package.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && vitest run && node scripts/check-lf.mjs && node scripts/run-shell-tests.mjs",
-    "verify:package": "node scripts/verify-package.mjs"
+    "test": "npm run typecheck && vitest run && node scripts/check-lf.mjs && node scripts/verify-update.mjs && node scripts/run-shell-tests.mjs",
+    "verify:update": "node scripts/verify-update.mjs",
+    "verify:package": "node scripts/verify-update.mjs && node scripts/verify-package.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

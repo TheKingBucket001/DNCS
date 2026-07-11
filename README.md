@@ -17,6 +17,10 @@ DNCS 是一个 Android Root 模块，通过 UID 级 IPv4/IPv6 防火墙规则控
 
 更新安装会保留现有断网配置、调试状态和运行日志。
 
+## 更新
+
+从 `0.1.0` 开始，DNCS 可由 KernelSU 管理器直接检查新版本。更新信息由本仓库的 [`update.json`](update.json) 提供，不依赖 KernelSU 官方模块仓库。
+
 ## 使用
 
 - 点击刷新按钮扫描当前用户应用、系统应用和共享 UID。
