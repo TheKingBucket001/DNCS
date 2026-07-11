@@ -28,20 +28,10 @@ DNCS 是一个 Android Root 模块，通过 UID 级 IPv4/IPv6 防火墙规则控
 - 共享 UID 开关会同时影响该 UID 下的全部应用，无法按包名单独放行。
 - 安装、卸载应用或共享 UID 成员变化后，点击刷新按钮更新应用清单。
 - 菜单中的“恢复网络”会清除 DNCS 防火墙链并放行全部应用。
-- WebUI 无法打开时，可以在 Root 管理器中禁用 DNCS 后重启，系统重启会清除当前内存中的规则。
 
 ## 兼容性
 
-DNCS 没有写死 Android 16 或 ColorOS 16，也没有调用 ColorOS 私有接口。完整真机验证目前仅覆盖：
-
-- Android 16 / ColorOS 16
-- KernelSU Manager v3.2.5
-- Chromium WebView 149
-- legacy iptables 1.8.11
-
-KernelSU 是当前完整验证目标。代码包含 APatch 的模块与 WebUI Bridge 兼容路径，但尚未完成 APatch 真机验证。Magisk 可使用模块脚本，但官方 Manager 不提供 KernelSU 式模块 WebUI，因此不属于完整 WebUI 支持目标。
-
-目标设备必须提供 IPv4/IPv6 的 `iptables`、`ip6tables`、`iptables-restore`、`ip6tables-restore` 以及 `owner` 匹配能力。其他 Android 版本和 ROM 需要实际测试后才能列为已验证兼容。
+DNCS 主要面向 KernelSU，并保留其他 Root 环境的基础适配。实际兼容性会受系统、WebView 和防火墙实现影响，建议安装前运行发行版附带的兼容性自检脚本。
 
 ## 构建
 
