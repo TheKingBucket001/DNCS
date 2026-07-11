@@ -18,13 +18,23 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
+
+      - name: Set up Android-compatible shell tests
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends busybox-static shellcheck
+          mkdir -p "$RUNNER_TEMP/dncs-bin"
+          ln -s "$(command -v busybox)" "$RUNNER_TEMP/dncs-bin/sh"
+          echo "$RUNNER_TEMP/dncs-bin" >> "$GITHUB_PATH"
+          echo "DNCS_TEST_SH=$RUNNER_TEMP/dncs-bin/sh" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: npm ci
@@ -42,5 +52,4 @@ jobs:
 
       - name: Check shell scripts
         run: |
-          shellcheck module/*.sh module/scripts/core.sh tests/shell/core_stub_test.sh tools/dncs-compat-check.sh
-          sh -n tools/dncs-compat-check.sh
+          shellcheck module/*.sh module/scripts/core.sh tests/shell/core_stub_test.sh

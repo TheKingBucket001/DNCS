@@ -9,8 +9,8 @@ STATE=$TMP/iptables-state
 mkdir -p "$MOD/scripts" "$MOD/webroot" "$BIN" "$STATE"
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
-STUB_SH=/bin/sh
-[ -x /system/bin/sh ] && STUB_SH=/system/bin/sh
+STUB_SH=${DNCS_TEST_SH:-/bin/sh}
+[ -z "${DNCS_TEST_SH:-}" ] && [ -x /system/bin/sh ] && STUB_SH=/system/bin/sh
 cp "$ROOT/module/scripts/core.sh" "$MOD/scripts/core.sh"
 chmod +x "$MOD/scripts/core.sh"
 
