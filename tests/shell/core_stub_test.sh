@@ -637,8 +637,8 @@ fi
 exit 1
 STUB
 chmod +x "$SERVICE_MOD/scripts/core.sh"
-cat > "$BIN/getprop-test" <<'STUB'
-#!/system/bin/sh
+printf '#!%s\n' "$STUB_SH" > "$BIN/getprop-test"
+cat >> "$BIN/getprop-test" <<'STUB'
 [ ! -e "$SERVICE_WIPE_MARKER" ] && {
   rm -f "$SERVICE_RULE_FILE"
   : > "$SERVICE_WIPE_MARKER"
