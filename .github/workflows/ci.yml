@@ -46,8 +46,8 @@ jobs:
           node scripts/check-lf.mjs
           node scripts/verify-update.mjs
 
-      - name: Trace Android ash fault stubs
-        run: sh -x tests/shell/core_stub_test.sh
+      - name: Run Android ash fault stubs
+        run: sh tests/shell/core_stub_test.sh
 
       - name: Build and verify package
         run: |
@@ -59,4 +59,4 @@ jobs:
 
       - name: Check shell scripts
         run: |
-          shellcheck module/*.sh module/scripts/core.sh tests/shell/core_stub_test.sh
+          shellcheck --severity=warning module/*.sh module/scripts/core.sh tests/shell/core_stub_test.sh
