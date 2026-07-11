@@ -19,9 +19,14 @@ describe('Miuix Web layout contract', () => {
   it('moves bottom tools into the menu and keeps the footer discipline line', () => {
     expect(html).not.toContain('class="tool-panel"');
     expect(html).toContain('id="footer-discipline"');
+    expect(html).toContain('class="footer-discipline-text"');
     expect(html).toContain('「以臆测体验为耻，以真实测试为荣」');
     expect(html).not.toContain('测试准则');
-    expect(css).toContain('.footer-discipline');
+    expect(css).toMatch(/\.footer-discipline\s*\{[^}]*overflow: clip/s);
+    expect(css).not.toMatch(/\.footer-discipline\s*\{[^}]*transform:/s);
+    expect(css).toMatch(
+      /\.footer-discipline-text\s*\{[^}]*padding: 8px 20px calc\(46px \+ var\(--bottom-inset\)\)[^}]*transform: translateY\(var\(--ime-offset, 0px\)\) scale\(0\.98\)/s
+    );
   });
 
   it('uses centered title and lightweight menu/search interactions', () => {

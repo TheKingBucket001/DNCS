@@ -1,6 +1,6 @@
 {
   "name": "dncs-kernelsu-module",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "通过 UID 级双栈防火墙规则控制 Android 应用联网的 Root 模块。",
   "license": "GPL-3.0-only",
   "type": "module",

@@ -1,7 +1,7 @@
 id=dncs
 name=DNCS
-version=0.1.0
-versionCode=2
+version=0.2.0
+versionCode=3
 author=Bucket
 description=通过模块 WebUI 按 UID 控制 Android 应用断网
 updateJson=https://raw.githubusercontent.com/TheKingBucket001/DNCS/main/update.json

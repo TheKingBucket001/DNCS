@@ -1,6 +1,6 @@
 {
-  "version": "0.1.0",
-  "versionCode": 2,
-  "zipUrl": "https://github.com/TheKingBucket001/DNCS/releases/download/v0.1.0/dncs-0.1.0.zip",
-  "changelog": "## DNCS 0.1.0\n\n- 首个稳定版本。\n- 新增 KernelSU 模块更新检测。\n- 保留经过真机验证的 WebUI、双栈事务与开机恢复实现。"
+  "version": "0.2.0",
+  "versionCode": 3,
+  "zipUrl": "https://github.com/TheKingBucket001/DNCS/releases/download/v0.2.0/dncs-0.2.0.zip",
+  "changelog": "## 改进\n\n- 修复输入法弹出时底部标语被顶起的问题。\n- 保持底部标语原位，不产生额外滚动区域。"
 }

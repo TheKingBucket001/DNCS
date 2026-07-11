@@ -696,13 +696,17 @@ body.about-active .back-button { display: grid; grid-column: 1; }
 .footer-discipline {
   width: min(600px, 100%);
   margin: 0 auto;
-  padding: 8px 20px calc(46px + var(--bottom-inset));
   color: var(--muted);
   text-align: center;
   font-size: 12px;
   letter-spacing: 0;
   opacity: 0.92;
-  transform: scale(0.98);
+  overflow: clip;
+}
+.footer-discipline-text {
+  display: block;
+  padding: 8px 20px calc(46px + var(--bottom-inset));
+  transform: translateY(var(--ime-offset, 0px)) scale(0.98);
   transform-origin: center;
 }
 body.about-active .footer-discipline { display: none; }
