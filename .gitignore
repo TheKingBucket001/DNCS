@@ -5,7 +5,6 @@ node_modules/
 /dist/*.zip
 /dist/*.sha256
 /module/webroot/*
-!/module/webroot/.gitkeep
 /module/webroot/assets/main.js.map
 
 # DNCS runtime files

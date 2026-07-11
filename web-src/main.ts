@@ -13,7 +13,8 @@ import {
   parseAppsText,
   setPendingChange
 } from './state';
-import { parseApplyResult, runCore } from './shell';
+import { resolveApplyExecution, runCore } from './shell';
+import type { ApplyResult } from './shell';
 
 let allApps: AppInfo[] = [];
 let currentBlocked = new Set<string>();
@@ -650,33 +651,54 @@ async function refreshData(options: RefreshOptions = {}): Promise<boolean> {
   }
 }
 
+async function applyRulesWithReconcile(
+  uids: string[],
+  unknownMessage: string,
+  reconcileStatus: string,
+  unresolvedMessage: string
+): Promise<ApplyResult | null> {
+  const resolution = await resolveApplyExecution(
+    () => runCore(exec, 'apply', uids),
+    async () => {
+      setRuleStateKnown(false);
+      showToast(unknownMessage);
+      return refreshData({
+        confirmPending: false,
+        toast: false,
+        internal: true,
+        status: reconcileStatus,
+        allowCachedFallback: false
+      });
+    }
+  );
+  if (resolution.kind === 'authoritative') return resolution.result;
+  if (!resolution.succeeded) showToast(unresolvedMessage);
+  return null;
+}
+
 async function saveChanges(): Promise<boolean> {
   if (isBusy || !ruleStateKnown || Object.keys(pendingChanges).length === 0) return false;
   setBusyState(true);
   try {
     await yieldForPaint();
     const finalUids = mergeBlocked(currentBlocked, pendingChanges);
-    const result = parseApplyResult(await runCore(exec, 'apply', finalUids));
-    const appliedUids = result.uids || finalUids;
-    const skipped = result.requestedCount !== null && result.appliedCount !== null
-      ? result.requestedCount - result.appliedCount
-      : 0;
-    currentBlocked = new Set(appliedUids);
+    const result = await applyRulesWithReconcile(
+      finalUids,
+      '保存结果无法确认，正在重新同步',
+      '正在核对已保存规则…',
+      '保存结果仍未知，请刷新后再操作'
+    );
+    if (!result) return false;
+    const skipped = result.requestedCount - result.appliedCount;
+    currentBlocked = new Set(result.uids);
     pendingChanges = {};
     updateUIState();
-    const refreshed = await refreshData({ confirmPending: false, toast: false, internal: true, status: '正在同步规则与应用列表…', allowCachedFallback: false });
+    renderList(true, false);
     if (skipped > 0) showToast(`规则已写入，跳过 ${skipped} 个已卸载应用`);
-    else showToast(refreshed ? '规则已写入并刷新' : '规则已写入，刷新失败');
+    else showToast('规则已写入');
     return true;
   } catch (error) {
-    if (isUnknownResult(error)) {
-      setRuleStateKnown(false);
-      showToast('保存结果未知，正在重新同步');
-      const reconciled = await refreshData({ confirmPending: false, toast: false, internal: true, status: '正在核对已保存规则…', allowCachedFallback: false });
-      if (!reconciled) showToast('保存结果仍未知，请刷新后再操作');
-    } else {
-      showToast(`保存失败：${errorText(error)}`);
-    }
+    showToast(`保存失败：${errorText(error)}`);
     return false;
   } finally {
     setBusyState(false);
@@ -745,27 +767,22 @@ async function restoreConfigFromFile(file: File): Promise<void> {
   setBusyState(true);
   try {
     await yieldForPaint();
-    const result = parseApplyResult(await runCore(exec, 'apply', uids));
-    const appliedUids = result.uids || uids;
-    const skipped = result.requestedCount !== null && result.appliedCount !== null
-      ? result.requestedCount - result.appliedCount
-      : 0;
-    currentBlocked = new Set(appliedUids);
+    const result = await applyRulesWithReconcile(
+      uids,
+      '还原结果无法确认，正在重新同步',
+      '正在核对还原后的规则…',
+      '还原结果仍未知，请刷新后再操作'
+    );
+    if (!result) return;
+    const skipped = result.requestedCount - result.appliedCount;
+    currentBlocked = new Set(result.uids);
     pendingChanges = {};
     updateUIState();
     renderList(true, false);
-    const refreshed = await refreshData({ confirmPending: false, toast: false, internal: true, status: '正在同步还原后的规则…', allowCachedFallback: false });
     if (skipped > 0) showToast(`配置已还原，跳过 ${skipped} 个已卸载应用`);
-    else showToast(refreshed ? '配置已还原' : '配置已还原，刷新失败');
+    else showToast('配置已还原');
   } catch (error) {
-    if (isUnknownResult(error)) {
-      setRuleStateKnown(false);
-      showToast('还原结果未知，正在重新同步');
-      const reconciled = await refreshData({ confirmPending: false, toast: false, internal: true, status: '正在核对还原后的规则…', allowCachedFallback: false });
-      if (!reconciled) showToast('还原结果仍未知，请刷新后再操作');
-    } else {
-      showToast(`还原失败：${errorText(error)}`);
-    }
+    showToast(`还原失败：${errorText(error)}`);
   } finally {
     setBusyState(false);
   }

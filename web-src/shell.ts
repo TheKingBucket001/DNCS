@@ -18,9 +18,31 @@ export interface ExecResult {
 export type ExecFn = (command: string, options?: { cwd?: string; env?: Record<string, string> }) => Promise<ExecResult | string>;
 
 export interface ApplyResult {
-  appliedCount: number | null;
-  requestedCount: number | null;
-  uids: string[] | null;
+  appliedCount: number;
+  requestedCount: number;
+  uids: string[];
+}
+
+export type ApplyResolution =
+  | { kind: 'authoritative'; result: ApplyResult }
+  | { kind: 'reconciled'; succeeded: boolean };
+
+const APPLY_FAILURE_RESULTS = new Set([
+  'FAIL',
+  'FS_ERROR',
+  'INVALID_UID',
+  'PMS_ERROR',
+  'UPDATE_PENDING',
+  'RECOVERY_FAILED',
+  'LOCKED',
+  'INIT_FAILED'
+]);
+
+export class ApplyResultUnknownError extends Error {
+  constructor(message = 'APPLY_RESULT_UNKNOWN') {
+    super(message);
+    this.name = 'ApplyResultUnknownError';
+  }
 }
 
 export function buildCoreCommand(action: CoreAction, uids: string[] = []): string {
@@ -48,9 +70,11 @@ export async function runCore(execFn: ExecFn, action: CoreAction, uids: string[]
 
 export function parseApplyResult(raw: string): ApplyResult {
   const token = raw.trim();
-  if (token === 'SUCCESS') return { appliedCount: null, requestedCount: null, uids: null };
   const match = token.match(/^SUCCESS:(\d+):(\d+):(.*)$/);
-  if (!match) throw new Error(token || 'EMPTY');
+  if (!match) {
+    if (APPLY_FAILURE_RESULTS.has(token)) throw new Error(token);
+    throw new ApplyResultUnknownError(token ? 'INVALID_APPLY_RESULT' : 'EMPTY_APPLY_RESULT');
+  }
 
   const appliedCount = Number(match[1]);
   const requestedCount = Number(match[2]);
@@ -61,7 +85,19 @@ export function parseApplyResult(raw: string): ApplyResult {
     || uids.length !== appliedCount
     || uids.some((uid) => !isValidUid(uid))
     || new Set(uids).size !== uids.length) {
-    throw new Error('INVALID_APPLY_RESULT');
+    throw new ApplyResultUnknownError('INVALID_APPLY_RESULT');
   }
   return { appliedCount, requestedCount, uids };
+}
+
+export async function resolveApplyExecution(
+  runApply: () => Promise<string>,
+  reconcile: () => Promise<boolean>
+): Promise<ApplyResolution> {
+  try {
+    return { kind: 'authoritative', result: parseApplyResult(await runApply()) };
+  } catch (error) {
+    if (!(error instanceof BridgeTimeoutError) && !(error instanceof ApplyResultUnknownError)) throw error;
+    return { kind: 'reconciled', succeeded: await reconcile() };
+  }
 }

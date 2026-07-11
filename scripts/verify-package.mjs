@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
+import { RELEASE_FILES } from './release-files.mjs';
 
 const require = createRequire(import.meta.url);
 const AdmZip = require('adm-zip');
@@ -24,44 +25,15 @@ for (const name of names) {
     throw new Error(`zip contains unsafe path ${name}`);
   }
 }
-const required = [
-  'module.prop',
-  'boot-completed.sh',
-  'service.sh',
-  'customize.sh',
-  'uninstall.sh',
-  'scripts/core.sh',
-  'webroot/icon.svg',
-  'webroot/index.html',
-  'webroot/assets/insets.css',
-  'webroot/assets/main.js',
-  'webroot/assets/style.css'
-];
-const forbidden = [
-  /^dncs\//,
-  /blocked\.conf(?:\.bak)?$/,
-  /apps\.txt$/,
-  /dncs\.log(?:\.old)?$/,
-  /debug\.flag$/,
-  /boot-info\.mark$/,
-  /\.dncs\.lock/,
-  /\.dncs\.txn/,
-  /config_uids\./,
-  /\.preserve\./,
-  /package\.tmp/,
-  /users\.tmp/,
-  /\.new$/,
-  /\.tmp$/
-];
+const expectedNames = [...RELEASE_FILES].sort();
+if (names.length !== expectedNames.length || names.some((name, index) => name !== expectedNames[index])) {
+  throw new Error(`zip file list differs from release allowlist: ${names.join(', ')}`);
+}
 
-for (const file of required) {
-  if (!names.includes(file)) throw new Error(`zip missing ${file}`);
+for (const file of RELEASE_FILES) {
   const local = await readFile(resolve(root, 'module', file));
   const archived = zip.readFile(file);
   if (!archived || !local.equals(archived)) throw new Error(`zip content differs from module/${file}`);
-}
-for (const name of names) {
-  if (forbidden.some((pattern) => pattern.test(name))) throw new Error(`zip contains forbidden runtime path ${name}`);
 }
 
 const copiedWebFiles = [

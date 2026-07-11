@@ -170,7 +170,7 @@ describe('Miuix Web layout contract', () => {
   it('guards asynchronous UI state and queues route changes instead of dropping rapid input', () => {
     expect(main).toContain('setBusyState');
     expect(main).toContain('input.disabled = isBusy');
-    expect(main).toContain('parseApplyResult');
+    expect(main).toContain('resolveApplyExecution');
     expect(main).toContain('queuedPage = nextPage');
     expect(main).toContain('if (queued && queued !== currentPage)');
     expect(main).not.toContain("currentPage === 'about' || isTransitioning");

@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { CORE_SCRIPT, CORE_TIMEOUT_SECONDS, buildCoreCommand, parseApplyResult, runCore } from '../../web-src/shell';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  ApplyResultUnknownError,
+  CORE_SCRIPT,
+  CORE_TIMEOUT_SECONDS,
+  buildCoreCommand,
+  parseApplyResult,
+  resolveApplyExecution,
+  runCore
+} from '../../web-src/shell';
 import { BridgeTimeoutError } from '../../web-src/bridge';
 
 describe('core shell command wrapper', () => {
@@ -34,15 +42,59 @@ describe('core shell command wrapper', () => {
     expect(() => buildCoreCommand('boot_apply' as never)).toThrow(/Unsupported action/);
   });
 
-  it('parses structured and legacy apply results without accepting malformed state', () => {
+  it('only accepts a complete structured apply result as authoritative state', () => {
     expect(parseApplyResult('SUCCESS:2:3:1000,10123\n')).toEqual({
       appliedCount: 2,
       requestedCount: 3,
       uids: ['1000', '10123']
     });
-    expect(parseApplyResult('SUCCESS')).toEqual({ appliedCount: null, requestedCount: null, uids: null });
-    expect(() => parseApplyResult('SUCCESS:2:1:1000,10123')).toThrow('INVALID_APPLY_RESULT');
-    expect(() => parseApplyResult('SUCCESS:2:2:1000')).toThrow('INVALID_APPLY_RESULT');
+    expect(parseApplyResult('SUCCESS:0:0:')).toEqual({
+      appliedCount: 0,
+      requestedCount: 0,
+      uids: []
+    });
+    expect(() => parseApplyResult('SUCCESS')).toThrow(ApplyResultUnknownError);
+    expect(() => parseApplyResult('SUCCESS:2:1:1000,10123')).toThrow(ApplyResultUnknownError);
+    expect(() => parseApplyResult('SUCCESS:2:2:1000')).toThrow(ApplyResultUnknownError);
     expect(() => parseApplyResult('FAIL')).toThrow('FAIL');
+  });
+
+  it('skips reconcile only for an authoritative structured success', async () => {
+    const reconcile = vi.fn(async () => true);
+    await expect(resolveApplyExecution(
+      async () => 'SUCCESS:1:1:10123',
+      reconcile
+    )).resolves.toEqual({
+      kind: 'authoritative',
+      result: { appliedCount: 1, requestedCount: 1, uids: ['10123'] }
+    });
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['bridge timeout', async () => { throw new BridgeTimeoutError(); }],
+    ['legacy success', async () => 'SUCCESS'],
+    ['damaged success', async () => 'SUCCESS:2:2:10123'],
+    ['missing output', async () => '']
+  ])('reconciles an uncertain apply result: %s', async (_label, runApply) => {
+    const reconcile = vi.fn(async () => true);
+    await expect(resolveApplyExecution(runApply, reconcile)).resolves.toEqual({
+      kind: 'reconciled',
+      succeeded: true
+    });
+    expect(reconcile).toHaveBeenCalledOnce();
+  });
+
+  it('does not reconcile an explicit apply failure', async () => {
+    const reconcile = vi.fn(async () => true);
+    await expect(resolveApplyExecution(async () => 'FS_ERROR', reconcile)).rejects.toThrow('FS_ERROR');
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it('keeps an uncertain result untrusted when reconcile fails', async () => {
+    await expect(resolveApplyExecution(
+      async () => 'SUCCESS',
+      async () => false
+    )).resolves.toEqual({ kind: 'reconciled', succeeded: false });
   });
 });
