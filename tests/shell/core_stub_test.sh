@@ -216,7 +216,25 @@ set -e
 [ "$rc" -ne 0 ]
 [ "$out" = UPDATE_PENDING ]
 grep -qx '10123' "$MOD/scripts/blocked.conf"
+
+out=$(DNCS_UPDATE_MODULE_DIR="$TMP/modules_update/dncs" sh "$MOD/scripts/core.sh" rescue)
+[ "$out" = RESCUED ]
+[ ! -s "$MOD/scripts/blocked.conf" ]
+[ ! -f "$STATE/4.chain" ]
+[ ! -f "$STATE/6.chain" ]
 rm -rf "$TMP/modules_update"
+
+out=$(sh "$MOD/scripts/core.sh" apply 10123)
+[ "$out" = 'SUCCESS:1:1:10123' ]
+grep -qx '10123' "$MOD/scripts/blocked.conf"
+
+printf '10123\nnot-a-uid\n99999999999\n10123\n' > "$MOD/scripts/blocked.conf"
+out=$(sh "$MOD/scripts/core.sh" boot_apply)
+[ "$out" = '' ]
+grep -qx '10123' "$STATE/4.rules"
+grep -qx '10123' "$STATE/6.rules"
+if grep -qE 'not-a-uid|99999999999' "$STATE/4.rules" "$STATE/6.rules"; then exit 1; fi
+printf '10123\n' > "$MOD/scripts/blocked.conf"
 
 rm -f "$DELAY_ONCE_FILE" "$DELAY_MARKER"
 DELAY_V4_COMMIT=1 sh "$MOD/scripts/core.sh" apply 1000 > "$TMP/signal-apply.out" 2>&1 &

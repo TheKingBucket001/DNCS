@@ -8,7 +8,10 @@ describe('apps.txt parsing', () => {
       'bad|uid|user|0',
       'com.android.phone|1001|system|0',
       'com.shared.one|1000|shared|0',
-      'com.demo.app (分身:10)|110123|user|0'
+      'com.demo.app (分身:10)|110123|user|0',
+      'com.invalid.flag|10124|user|yes',
+      'com.extra.field|10125|user|0|0|com.extra.field|ignored',
+      'com.partial.identity|10126|user|0||com.partial.identity'
     ].join('\n'));
 
     expect(parsed.apps).toHaveLength(4);
@@ -17,6 +20,21 @@ describe('apps.txt parsing', () => {
     expect(parsed.apps[3].isClone).toBe(true);
     expect(parsed.apps[3].userId).toBe('10');
     expect(parsed.apps[3].packageName).toBe('com.demo.app');
+    expect(parsed.invalidRows).toBe(4);
+  });
+
+  it('requires a complete six-field identity row for current caches', () => {
+    const parsed = parseAppsText([
+      'com.legacy|10123|user|1',
+      'com.current|10124|user|0|0|com.current',
+      'com.bad-flag|10125|user|2|0|com.bad-flag',
+      'com.missing-user|10126|user|0||com.missing-user',
+      'com.missing-package|10127|user|0|0|'
+    ].join('\n'));
+
+    expect(parsed.apps.map((app) => app.packageName)).toEqual(['com.legacy', 'com.current']);
+    expect(parsed.blocked).toEqual(new Set(['10123']));
+    expect(parsed.invalidRows).toBe(3);
   });
 
   it('rejects UIDs outside Android signed uid_t range', () => {

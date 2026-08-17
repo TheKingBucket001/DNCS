@@ -14,6 +14,7 @@ export interface AppInfo {
 export interface ParsedApps {
   apps: AppInfo[];
   blocked: Set<string>;
+  invalidRows: number;
 }
 
 export const CATEGORIES: readonly AppType[] = ['user', 'system', 'shared'];
@@ -44,17 +45,31 @@ export function appIdentity(app: AppInfo): string {
 export function parseAppsText(raw: string): ParsedApps {
   const apps: AppInfo[] = [];
   const blocked = new Set<string>();
+  let invalidRows = 0;
 
   for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const [pkg, uid, type, blockedFlag, storedUserId, storedPackageName] = line.split('|');
-    if (!pkg || !isValidUid(uid) || !VALID_APP_TYPES.has(type as AppType)) continue;
+    const fields = line.split('|');
+    if (fields.length !== 4 && fields.length !== 6) {
+      invalidRows += 1;
+      continue;
+    }
+    const [pkg, uid, type, blockedFlag, storedUserId, storedPackageName] = fields;
+    if (!pkg || !isValidUid(uid) || !VALID_APP_TYPES.has(type as AppType)
+      || (blockedFlag !== '0' && blockedFlag !== '1')
+      || (fields.length === 6 && (!storedUserId || !storedPackageName))) {
+      invalidRows += 1;
+      continue;
+    }
 
     const cloneMatch = pkg.match(CLONE_SUFFIX);
     const displayPkg = cloneMatch ? cloneMatch[1] : pkg;
     const userId = storedUserId || cloneMatch?.[2] || '0';
     const packageName = storedPackageName || displayPkg;
-    if (!isValidUserId(userId) || !isValidPackageName(packageName)) continue;
+    if (!isValidUserId(userId) || !isValidPackageName(displayPkg) || !isValidPackageName(packageName)) {
+      invalidRows += 1;
+      continue;
+    }
     const isBlocked = blockedFlag === '1';
 
     apps.push({
@@ -70,7 +85,7 @@ export function parseAppsText(raw: string): ParsedApps {
     if (isBlocked) blocked.add(uid);
   }
 
-  return { apps, blocked };
+  return { apps, blocked, invalidRows };
 }
 
 export function setPendingChange(

@@ -14,7 +14,7 @@ import {
   setPendingChange
 } from './state';
 import { resolveApplyExecution, runCore } from './shell';
-import type { ApplyResult } from './shell';
+import type { ApplyResolution } from './shell';
 
 let allApps: AppInfo[] = [];
 let currentBlocked = new Set<string>();
@@ -594,6 +594,7 @@ async function loadCachedApps(showMissing = true, clearPending = true): Promise<
     if (!response.ok) throw new Error(String(response.status));
     const parsed = parseAppsText(await response.text());
     if (parsed.apps.length === 0) throw new Error('EMPTY_APPS_CACHE');
+    if (parsed.invalidRows > 0) throw new Error('INVALID_APPS_CACHE');
     allApps = parsed.apps;
     currentBlocked = parsed.blocked;
     if (clearPending) pendingChanges = {};
@@ -656,7 +657,7 @@ async function applyRulesWithReconcile(
   unknownMessage: string,
   reconcileStatus: string,
   unresolvedMessage: string
-): Promise<ApplyResult | null> {
+): Promise<ApplyResolution> {
   const resolution = await resolveApplyExecution(
     () => runCore(exec, 'apply', uids),
     async () => {
@@ -671,9 +672,8 @@ async function applyRulesWithReconcile(
       });
     }
   );
-  if (resolution.kind === 'authoritative') return resolution.result;
-  if (!resolution.succeeded) showToast(unresolvedMessage);
-  return null;
+  if (resolution.kind === 'reconciled' && !resolution.succeeded) showToast(unresolvedMessage);
+  return resolution;
 }
 
 async function saveChanges(): Promise<boolean> {
@@ -682,13 +682,17 @@ async function saveChanges(): Promise<boolean> {
   try {
     await yieldForPaint();
     const finalUids = mergeBlocked(currentBlocked, pendingChanges);
-    const result = await applyRulesWithReconcile(
+    const resolution = await applyRulesWithReconcile(
       finalUids,
       '保存结果无法确认，正在重新同步',
       '正在核对已保存规则…',
       '保存结果仍未知，请刷新后再操作'
     );
-    if (!result) return false;
+    if (resolution.kind === 'reconciled') {
+      if (resolution.succeeded) showToast('规则已重新同步');
+      return resolution.succeeded;
+    }
+    const result = resolution.result;
     const skipped = result.requestedCount - result.appliedCount;
     currentBlocked = new Set(result.uids);
     pendingChanges = {};
@@ -767,13 +771,17 @@ async function restoreConfigFromFile(file: File): Promise<void> {
   setBusyState(true);
   try {
     await yieldForPaint();
-    const result = await applyRulesWithReconcile(
+    const resolution = await applyRulesWithReconcile(
       uids,
       '还原结果无法确认，正在重新同步',
       '正在核对还原后的规则…',
       '还原结果仍未知，请刷新后再操作'
     );
-    if (!result) return;
+    if (resolution.kind === 'reconciled') {
+      if (resolution.succeeded) showToast('配置已重新同步');
+      return;
+    }
+    const result = resolution.result;
     const skipped = result.requestedCount - result.appliedCount;
     currentBlocked = new Set(result.uids);
     pendingChanges = {};

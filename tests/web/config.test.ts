@@ -18,6 +18,14 @@ describe('DNCS config parser', () => {
     });
   });
 
+  it('accepts UTF-8 BOM files from desktop file managers', () => {
+    expect(parseConfigText('\uFEFFDNCS_CONFIG_V2\nuid=10123\napp=0|com.example.app\n')).toEqual({
+      format: 'v2',
+      uids: [],
+      groups: [{ savedUid: '10123', apps: [{ userId: '0', packageName: 'com.example.app' }] }]
+    });
+  });
+
   it('keeps legacy plain UID config compatible', () => {
     expect(parseConfigText('10167\n10007\n')).toEqual({
       format: 'legacy',

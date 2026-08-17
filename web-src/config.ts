@@ -72,7 +72,7 @@ function parseV2(lines: string[]): ParsedConfig {
 }
 
 export function parseConfigText(raw: string): ParsedConfig {
-  const lines = raw
+  const lines = raw.replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith('#'));

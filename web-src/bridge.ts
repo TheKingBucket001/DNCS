@@ -45,7 +45,9 @@ function createCallbackName(): string {
 
 export function getBridge(): RootBridge | null {
   const candidates = [window.ksu, window.apatch, window.ksud, window.KSU];
-  return candidates.find((bridge) => typeof bridge?.exec === 'function') || null;
+  return candidates.find((bridge) =>
+    typeof bridge?.exec === 'function' || typeof bridge?.spawn === 'function'
+  ) || null;
 }
 
 function isExecResult(value: unknown): boolean {

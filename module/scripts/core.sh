@@ -442,7 +442,9 @@ log_boot_infos_once() {
   fi
   while IFS= read -r _boot_uid; do
     [ -n "$_boot_uid" ] && log_msg INFO "UID:$_boot_uid 开机维持断网 🚫"
-  done < "$CONF_FILE"
+  done <<EOF
+$(sanitize_conf_file "$CONF_FILE")
+EOF
   printf '%s\n' "$_boot_id" > "$BOOT_INFO_MARK" 2>/dev/null
   chmod 600 "$BOOT_INFO_MARK" 2>/dev/null
   sync_file "$BOOT_INFO_MARK"
@@ -1043,7 +1045,7 @@ recover_pending_transaction() {
   _source=${1:-action}
   [ -f "$TXN_FILE" ] || return 0
   log_msg ERROR "Transaction recovery: source=$_source; reconciling persisted config"
-  if restore_rules_best_effort "$(cat "$CONF_FILE" 2>/dev/null)"; then
+  if restore_rules_best_effort "$(sanitize_conf_file "$CONF_FILE")"; then
     clear_transaction || log_msg ERROR "Transaction recovery WARN: marker cleanup failed"
     log_msg INFO "未完成事务已按已保存配置恢复"
     return 0
@@ -1103,7 +1105,8 @@ apply_config() {
   fi
 
   if apply_rules "$(cat "$_new_conf" 2>/dev/null)"; then
-    cp -f "$CONF_FILE" "$CONF_BAK" 2>/dev/null || : > "$CONF_BAK"
+    cp -f "$CONF_FILE" "$CONF_BAK" 2>/dev/null || \
+      log_msg ERROR "Apply WARN: failed to refresh config backup; keeping previous backup"
     chmod 600 "$CONF_BAK" 2>/dev/null
     if run_tracked_command mv -f "$_new_conf" "$CONF_FILE"; then
       chmod 600 "$CONF_FILE" 2>/dev/null
@@ -1129,7 +1132,7 @@ apply_config() {
       _rc=0
     else
       log_msg ERROR "Transaction ERROR: FS write failed. Rolling back firewall..."
-      if restore_rules_best_effort "$(cat "$CONF_FILE" 2>/dev/null)" >/dev/null 2>&1; then
+      if restore_rules_best_effort "$(sanitize_conf_file "$CONF_FILE")" >/dev/null 2>&1; then
         clear_transaction || true
       else
         log_msg ERROR "Rollback ERROR: previous firewall restore failed after FS write error"
@@ -1140,7 +1143,7 @@ apply_config() {
     fi
   else
     log_msg ERROR "Transaction ERROR: Dual Stack mismatch or failure. Initiating Rollback..."
-    if restore_rules_best_effort "$(cat "$CONF_FILE" 2>/dev/null)" >/dev/null 2>&1; then
+    if restore_rules_best_effort "$(sanitize_conf_file "$CONF_FILE")" >/dev/null 2>&1; then
       clear_transaction || true
     else
       log_msg ERROR "Rollback ERROR: previous firewall restore failed after transaction failure"
@@ -1170,13 +1173,13 @@ boot_apply() {
 
   if ! mark_transaction "boot:$_source"; then
     log_msg ERROR "Boot Apply ERROR: failed to persist transaction marker"
-  elif apply_rules "$(cat "$CONF_FILE" 2>/dev/null)"; then
+  elif apply_rules "$(sanitize_conf_file "$CONF_FILE")"; then
     log_boot_infos_once
     clear_transaction || log_msg ERROR "Boot Apply WARN: marker cleanup failed"
     _status=SUCCESS
     _rc=0
   else
-    restore_rules_best_effort "$(cat "$CONF_FILE" 2>/dev/null)" >/dev/null 2>&1 \
+    restore_rules_best_effort "$(sanitize_conf_file "$CONF_FILE")" >/dev/null 2>&1 \
       || log_msg ERROR "Boot Apply recovery ERROR: one or more families remain unavailable"
   fi
 
@@ -1213,7 +1216,7 @@ rescue_all() {
     fi
     rm -f "$_empty_conf"
     log_msg ERROR "Rescue ERROR: config clear failed; restoring persisted rules"
-    if restore_rules_best_effort "$(cat "$CONF_FILE" 2>/dev/null)" >/dev/null 2>&1; then
+    if restore_rules_best_effort "$(sanitize_conf_file "$CONF_FILE")" >/dev/null 2>&1; then
       clear_transaction || log_msg ERROR "Rescue rollback WARN: marker cleanup failed"
     else
       log_msg ERROR "Rescue rollback ERROR: persisted rules could not be restored"
@@ -1222,7 +1225,7 @@ rescue_all() {
     return 1
   fi
   log_msg ERROR "Rescue ERROR: firewall cleanup failed; restoring persisted rules"
-  if restore_rules_best_effort "$(cat "$CONF_FILE" 2>/dev/null)" >/dev/null 2>&1; then
+  if restore_rules_best_effort "$(sanitize_conf_file "$CONF_FILE")" >/dev/null 2>&1; then
     clear_transaction || log_msg ERROR "Rescue rollback WARN: marker cleanup failed"
     log_msg INFO "Rescue rollback: persisted dual-stack rules restored"
   else
@@ -1258,7 +1261,7 @@ case "$ACTION" in
 esac
 
 case "$ACTION" in
-  apply|rescue)
+  apply)
     if [ "${DNCS_ALLOW_UPDATE_PENDING:-0}" != 1 ] && [ -d "$UPDATE_MODULE_DIR" ]; then
       log_msg ERROR "Action rejected: module update is pending; reboot before $ACTION"
       printf 'UPDATE_PENDING\n'

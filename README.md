@@ -44,6 +44,8 @@ npm run package
 npm run verify:package
 ```
 
+`npm test` 的 Shell 故障桩需要 POSIX `sh`；Windows 可在 WSL 或 Git Bash 中运行，也可以连接可用 root shell 的 Android 设备，由测试脚本自动回退执行。
+
 生成的模块包和 SHA256 校验文件位于 `dist/`。
 
 ## 许可证

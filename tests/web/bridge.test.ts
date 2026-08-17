@@ -111,6 +111,28 @@ describe('KernelSU bridge wrapper', () => {
     expect(callbackKeys(win)).toEqual([]);
   });
 
+  it('supports a spawn-only bridge implementation', async () => {
+    let win: FakeWindow;
+    const bridge = {
+      spawn(this: unknown, command: string, _args: string, _options: string, callbackName: string) {
+        expect(this).toBe(bridge);
+        expect(command).toContain(' list');
+        setTimeout(() => {
+          const callback = win[callbackName] as {
+            stdout: { emit: (event: string, data: string) => void };
+            emit: (event: string, code: number) => void;
+          };
+          callback.stdout.emit('data', 'READY');
+          callback.emit('exit', 0);
+        }, 1);
+      }
+    };
+    win = installBridge(bridge);
+
+    await expect(runCore(exec, 'list')).resolves.toBe('READY');
+    expect(callbackKeys(win)).toEqual([]);
+  });
+
   it('absorbs the KernelSU nonzero exit-then-error sequence before removing the spawn callback', async () => {
     let win: FakeWindow;
     const bridge = {
