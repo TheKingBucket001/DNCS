@@ -7,7 +7,17 @@ MOD=$TMP/module
 BIN=$TMP/bin
 STATE=$TMP/iptables-state
 mkdir -p "$MOD/scripts" "$MOD/webroot" "$BIN" "$STATE"
-trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+
+cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    printf 'core stub tests failed near line %s\n' "${LINENO:-unknown}" >&2
+  fi
+  rm -rf "$TMP"
+}
+
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 
 STUB_SH=${DNCS_TEST_SH:-/bin/sh}
 [ -z "${DNCS_TEST_SH:-}" ] && [ -x /system/bin/sh ] && STUB_SH=/system/bin/sh
@@ -43,10 +53,10 @@ if [ "$1 $2 $3" = "package list packages" ]; then
   case "$*" in
     *"-3 --user 0 -U"*) printf 'package:com.user.alpha uid:10123\npackage:com.user.shared.a uid:10150\npackage:com.user.shared.b uid:10150\n' ;;
     *"-s --user 0 -U"*) printf 'package:android uid:1000\npackage:com.android.phone uid:1001\npackage:com.shared.a uid:1000\npackage:com.shared.b uid:1000\n' ;;
-    *"-3 --user 10 -U"*) printf 'package:com.user.alpha uid:110123\n' ;;
-    *"-s --user 10 -U"*) printf 'package:android uid:100000\n' ;;
+    *"-3 --user 10 -U"*) printf 'package:com.user.alpha uid:1010123\n' ;;
+    *"-s --user 10 -U"*) printf 'package:android uid:1001000\n' ;;
     *"-U --user 0"*) printf 'package:com.user.alpha uid:10123\npackage:com.user.shared.a uid:10150\npackage:com.user.shared.b uid:10150\npackage:android uid:1000\npackage:com.android.phone uid:1001\npackage:com.shared.a uid:1000\npackage:com.shared.b uid:1000\n' ;;
-    *"-U --user 10"*) printf 'package:com.user.alpha uid:110123\npackage:android uid:100000\n' ;;
+    *"-U --user 10"*) printf 'package:com.user.alpha uid:1010123\npackage:android uid:1001000\n' ;;
   esac
   exit 0
 fi
@@ -198,9 +208,9 @@ export REQUIRE_PIPE_STDOUT=1
 out=$(sh "$MOD/scripts/core.sh" list)
 [ "$out" = READY ]
 grep -q 'com.user.alpha|10123|user|0' "$MOD/webroot/apps.txt"
-grep -q 'com.user.alpha .*|110123|user|0' "$MOD/webroot/apps.txt"
+grep -q 'com.user.alpha .*|1010123|user|0' "$MOD/webroot/apps.txt"
 grep -q 'com.user.alpha|10123|user|0|0|com.user.alpha' "$MOD/webroot/apps.txt"
-grep -q 'com.user.alpha .*|110123|user|0|10|com.user.alpha' "$MOD/webroot/apps.txt"
+grep -q 'com.user.alpha .*|1010123|user|0|10|com.user.alpha' "$MOD/webroot/apps.txt"
 grep -q 'com.shared.a|1000|shared|0' "$MOD/webroot/apps.txt"
 grep -q 'com.user.shared.a|10150|shared|0' "$MOD/webroot/apps.txt"
 grep -q 'com.user.shared.b|10150|shared|0' "$MOD/webroot/apps.txt"
@@ -324,7 +334,7 @@ set -e
 cmp "$TMP/apps.before" "$MOD/webroot/apps.txt"
 
 set +e
-out=$(FAIL_USER_10=1 sh "$MOD/scripts/core.sh" apply 110123 2>/dev/null)
+out=$(FAIL_USER_10=1 sh "$MOD/scripts/core.sh" apply 1010123 2>/dev/null)
 rc=$?
 set -e
 [ "$rc" -ne 0 ]
