@@ -35,6 +35,7 @@ LOCK_TOKEN=
 LOCK_ACQUIRED=0
 LOCK_INIT_GRACE_SECONDS=${DNCS_LOCK_INIT_GRACE_SECONDS:-3}
 ACTION_LOCK_ACTIVE=0
+CURRENT_BOOT_ID=
 
 IPTABLES_CMD=${DNCS_IPTABLES_CMD:-iptables}
 IP6TABLES_CMD=${DNCS_IP6TABLES_CMD:-ip6tables}
@@ -167,6 +168,21 @@ cleanup_stale_tmp() {
     2>/dev/null
 }
 
+read_lock_value() {
+  _record_file=$1
+  _record_key=$2
+  [ -r "$_record_file" ] || return 1
+  while IFS= read -r _record_line; do
+    case "$_record_line" in
+      "$_record_key="*)
+        printf '%s\n' "${_record_line#*=}"
+        return 0
+        ;;
+    esac
+  done < "$_record_file"
+  return 1
+}
+
 track_child_owner() {
   _tracked_owner_pid=$1
   [ "$LOCK_ACQUIRED" -eq 1 ] || return 1
@@ -178,7 +194,6 @@ track_child_owner() {
     printf 'start=%s\n' "$_tracked_owner_start"
     printf 'boot=%s\n' "$(current_boot_id)"
   } > "$_tracked_owner_tmp" 2>/dev/null || { rm -f "$_tracked_owner_tmp"; return 1; }
-  chmod 600 "$_tracked_owner_tmp" 2>/dev/null || { rm -f "$_tracked_owner_tmp"; return 1; }
   mv -f "$_tracked_owner_tmp" "$LOCK_FILE/child" 2>/dev/null || { rm -f "$_tracked_owner_tmp"; return 1; }
   return 0
 }
@@ -187,7 +202,7 @@ clear_tracked_child_owner() {
   _tracked_owner_pid=$1
   [ "$LOCK_ACQUIRED" -eq 1 ] || return 0
   _tracked_owner_file="$LOCK_FILE/child"
-  _recorded_child=$(sed -n 's/^pid=//p' "$_tracked_owner_file" 2>/dev/null | head -n 1)
+  _recorded_child=$(read_lock_value "$_tracked_owner_file" pid)
   [ "$_recorded_child" = "$_tracked_owner_pid" ] && rm -f "$_tracked_owner_file" 2>/dev/null
 }
 
@@ -274,9 +289,17 @@ on_lock_wait_signal() {
 process_start_time() {
   _process_pid=$1
   case "$_process_pid" in ''|*[!0-9]*) return 1 ;; esac
-  _process_stat=$(cat "/proc/$_process_pid/stat" 2>/dev/null) || return 1
+  { IFS= read -r _process_stat < "/proc/$_process_pid/stat"; } 2>/dev/null || return 1
   _process_tail=${_process_stat#*) }
-  _process_start=$(printf '%s\n' "$_process_tail" | awk '{ print $20 }')
+  _process_start=
+  _process_field=0
+  for _process_value in $_process_tail; do
+    _process_field=$((_process_field + 1))
+    if [ "$_process_field" -eq 20 ]; then
+      _process_start=$_process_value
+      break
+    fi
+  done
   case "$_process_start" in ''|*[!0-9]*) return 1 ;; esac
   printf '%s\n' "$_process_start"
 }
@@ -284,9 +307,9 @@ process_start_time() {
 lock_identity_alive() {
   _lock_identity=$1
   [ -f "$_lock_identity" ] || return 1
-  _lock_pid=$(sed -n 's/^pid=//p' "$_lock_identity" 2>/dev/null | head -n 1)
-  _lock_boot=$(sed -n 's/^boot=//p' "$_lock_identity" 2>/dev/null | head -n 1)
-  _lock_start=$(sed -n 's/^start=//p' "$_lock_identity" 2>/dev/null | head -n 1)
+  _lock_pid=$(read_lock_value "$_lock_identity" pid)
+  _lock_boot=$(read_lock_value "$_lock_identity" boot)
+  _lock_start=$(read_lock_value "$_lock_identity" start)
   [ -n "$_lock_pid" ] && [ -n "$_lock_boot" ] && [ -n "$_lock_start" ] || return 1
   [ "$_lock_boot" = "$(current_boot_id)" ] || return 1
   _live_start=$(process_start_time "$_lock_pid") || return 1
@@ -320,7 +343,7 @@ remove_stale_lock() {
 release_lock() {
   [ "$LOCK_ACQUIRED" -eq 1 ] || return 0
   _release_owner="$LOCK_FILE/owner"
-  _release_token=$(sed -n 's/^token=//p' "$_release_owner" 2>/dev/null | head -n 1)
+  _release_token=$(read_lock_value "$_release_owner" token)
   if [ -n "$LOCK_TOKEN" ] && [ "$_release_token" = "$LOCK_TOKEN" ]; then
     _released_lock="$LOCK_FILE.release.$$"
     rm -rf "$_released_lock" 2>/dev/null
@@ -423,17 +446,23 @@ sync_file() {
 }
 
 current_boot_id() {
+  if [ -n "$CURRENT_BOOT_ID" ]; then
+    printf '%s\n' "$CURRENT_BOOT_ID"
+    return 0
+  fi
   _boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
   if [ -n "$_boot_id" ]; then
+    CURRENT_BOOT_ID=$_boot_id
     printf '%s\n' "$_boot_id"
     return 0
   fi
   _boot_time=$(cut -d. -f1 /proc/uptime 2>/dev/null)
   _now=$(now_seconds)
   case "$_boot_time" in
-    ''|*[!0-9]*) printf 'unknown\n' ;;
-    *) printf '%s\n' "$((_now - _boot_time))" ;;
+    ''|*[!0-9]*) CURRENT_BOOT_ID=unknown ;;
+    *) CURRENT_BOOT_ID=$((_now - _boot_time)) ;;
   esac
+  printf '%s\n' "$CURRENT_BOOT_ID"
 }
 
 log_boot_infos_once() {
@@ -699,12 +728,37 @@ run_ipt_capture() {
   return "$_ret"
 }
 
+run_ipt_readonly_capture() {
+  _tool=$1
+  _out_file=$2
+  _error_file=$3
+  shift 3
+  "$_tool" -w 2 "$@" > "$_out_file" 2> "$_error_file"
+  _ret=$?
+  if [ "$_ret" -ne 0 ] && wait_option_unsupported "$_error_file"; then
+    "$_tool" "$@" > "$_out_file" 2> "$_error_file"
+    _ret=$?
+  fi
+  return "$_ret"
+}
+
 run_ipt_quiet() {
   _tool=$1
   shift
   _out_file="$SCRIPT_DIR/ipt_out.$$.tmp"
   _error_file="$SCRIPT_DIR/ipt_err.$$.tmp"
   run_ipt_capture "$_tool" "$_out_file" "$_error_file" "$@"
+  _ret=$?
+  rm -f "$_out_file" "$_error_file"
+  return "$_ret"
+}
+
+run_ipt_readonly_quiet() {
+  _tool=$1
+  shift
+  _out_file="$SCRIPT_DIR/ipt_out.$$.tmp"
+  _error_file="$SCRIPT_DIR/ipt_err.$$.tmp"
+  run_ipt_readonly_capture "$_tool" "$_out_file" "$_error_file" "$@"
   _ret=$?
   rm -f "$_out_file" "$_error_file"
   return "$_ret"
@@ -717,13 +771,13 @@ ensure_chain_one() {
     log_msg ERROR "Firewall ERROR: $_name command not found ($_tool)"
     return 1
   fi
-  if ! run_ipt_quiet "$_tool" -nL "$CHAIN_NAME"; then
+  if ! run_ipt_readonly_quiet "$_tool" -nL "$CHAIN_NAME"; then
     if ! run_ipt_quiet "$_tool" -N "$CHAIN_NAME"; then
       log_msg ERROR "Firewall ERROR: $_name create chain failed"
       return 1
     fi
   fi
-  if ! run_ipt_quiet "$_tool" -C OUTPUT -j "$CHAIN_NAME"; then
+  if ! run_ipt_readonly_quiet "$_tool" -C OUTPUT -j "$CHAIN_NAME"; then
     if ! run_ipt_quiet "$_tool" -I OUTPUT -j "$CHAIN_NAME"; then
       log_msg ERROR "Firewall ERROR: $_name attach OUTPUT failed"
       return 1
@@ -743,21 +797,21 @@ remove_chain_one() {
     return 1
   fi
 
-  if ! run_ipt_capture "$_tool" "$_out_file" "$_error_file" -S; then
+  if ! run_ipt_readonly_capture "$_tool" "$_out_file" "$_error_file" -S; then
     _err_msg=$(tr '\n' ' ' < "$_error_file" 2>/dev/null)
     log_msg ERROR "Rescue ERROR: $_name initial rules query failed - $_err_msg"
     rm -f "$_out_file" "$_error_file"
     return 1
   fi
 
-  while run_ipt_quiet "$_tool" -C OUTPUT -j "$CHAIN_NAME"; do
+  while run_ipt_readonly_quiet "$_tool" -C OUTPUT -j "$CHAIN_NAME"; do
     if ! run_ipt_quiet "$_tool" -D OUTPUT -j "$CHAIN_NAME"; then
       _remove_one_status=1
       break
     fi
   done
 
-  if ! run_ipt_capture "$_tool" "$_out_file" "$_error_file" -S; then
+  if ! run_ipt_readonly_capture "$_tool" "$_out_file" "$_error_file" -S; then
     _err_msg=$(tr '\n' ' ' < "$_error_file" 2>/dev/null)
     log_msg ERROR "Rescue ERROR: $_name rules query failed - $_err_msg"
     rm -f "$_out_file" "$_error_file"
@@ -772,7 +826,7 @@ remove_chain_one() {
     run_ipt_quiet "$_tool" -X "$CHAIN_NAME" || _remove_one_status=1
   fi
 
-  if ! run_ipt_capture "$_tool" "$_out_file" "$_error_file" -S; then
+  if ! run_ipt_readonly_capture "$_tool" "$_out_file" "$_error_file" -S; then
     _err_msg=$(tr '\n' ' ' < "$_error_file" 2>/dev/null)
     log_msg ERROR "Rescue ERROR: $_name final verification failed - $_err_msg"
     _remove_one_status=1
@@ -794,7 +848,7 @@ preflight_remove_one() {
     log_msg ERROR "Rescue ERROR: $_name command not found ($_tool)"
     return 1
   fi
-  if ! run_ipt_capture "$_tool" "$_out_file" "$_error_file" -S; then
+  if ! run_ipt_readonly_capture "$_tool" "$_out_file" "$_error_file" -S; then
     _err_msg=$(tr '\n' ' ' < "$_error_file" 2>/dev/null)
     log_msg ERROR "Rescue ERROR: $_name preflight query failed - $_err_msg"
     rm -f "$_out_file" "$_error_file"
@@ -869,10 +923,10 @@ preflight_restore() {
     rm -f "$_restore_input"
     return 1
   fi
-  run_tracked_command --dncs-stdin "$_restore_input" "$_tool" -w 2 --noflush --test >/dev/null 2>"$_err_log"
+  "$_tool" -w 2 --noflush --test < "$_restore_input" >/dev/null 2>"$_err_log"
   _ret=$?
   if [ "$_ret" -ne 0 ] && wait_option_unsupported "$_err_log"; then
-    run_tracked_command --dncs-stdin "$_restore_input" "$_tool" --noflush --test >/dev/null 2>"$_err_log"
+    "$_tool" --noflush --test < "$_restore_input" >/dev/null 2>"$_err_log"
     _ret=$?
   fi
   rm -f "$_restore_input"

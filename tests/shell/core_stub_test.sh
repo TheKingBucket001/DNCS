@@ -70,15 +70,29 @@ case "$name" in ip6*) family=6 ;; *) family=4 ;; esac
 chain="$IPT_STATE_DIR/$family.chain"
 jump="$IPT_STATE_DIR/$family.jump"
 rules="$IPT_STATE_DIR/$family.rules"
-if [ "${KILL_PARENT_ON_START:-0}" = 1 ] && [ ! -e "$KILL_PARENT_ONCE" ]; then
-  : > "$KILL_PARENT_ONCE"
-  printf '%s\n' "$$" > "$KILL_PARENT_MARKER"
-  kill -KILL "$PPID" 2>/dev/null || exit 97
-  sleep 3
-  : > "$KILL_PARENT_DONE"
-  exit 0
+if [ "${1:-}" = "-w" ]; then
+  shift 2
+  case "${1:-}" in
+    -nL|-C|-S)
+      if [ "${FAIL_WAIT_ON_READONLY:-0}" = 1 ]; then
+        echo 'unknown option -w' >&2
+        exit 2
+      fi
+      ;;
+  esac
 fi
-if [ "${1:-}" = "-w" ]; then shift 2; fi
+if [ "${KILL_PARENT_ON_START:-0}" = 1 ] && [ ! -e "$KILL_PARENT_ONCE" ]; then
+  case "${1:-}" in
+    -N|-I)
+      : > "$KILL_PARENT_ONCE"
+      printf '%s\n' "$$" > "$KILL_PARENT_MARKER"
+      kill -KILL "$PPID" 2>/dev/null || exit 97
+      sleep 3
+      : > "$KILL_PARENT_DONE"
+      exit 0
+      ;;
+  esac
+fi
 case "${1:-}" in
   -S)
     [ "${FAIL_QUERY:-0}" = 1 ] && { echo 'forced rules query failure' >&2; exit 4; }
@@ -248,6 +262,9 @@ out=$(sh "$MOD/scripts/core.sh" apply 10123)
 [ "$out" = 'SUCCESS:1:1:10123' ]
 grep -qx '10123' "$MOD/scripts/blocked.conf"
 
+out=$(FAIL_WAIT_ON_READONLY=1 sh "$MOD/scripts/core.sh" apply 10123)
+[ "$out" = 'SUCCESS:1:1:10123' ]
+
 printf '10123\nnot-a-uid\n99999999999\n10123\n' > "$MOD/scripts/blocked.conf"
 out=$(sh "$MOD/scripts/core.sh" boot_apply)
 [ "$out" = '' ]
@@ -404,6 +421,8 @@ grep -qx '10123' "$STATE/4.rules"
 grep -qx '10123' "$STATE/6.rules"
 
 rm -f "$KILL_PARENT_ONCE" "$KILL_PARENT_MARKER" "$KILL_PARENT_DONE"
+rm -f "$STATE"/4.chain "$STATE"/4.jump "$STATE"/4.rules \
+  "$STATE"/6.chain "$STATE"/6.jump "$STATE"/6.rules
 KILL_PARENT_ON_START=1 sh "$MOD/scripts/core.sh" boot_apply > "$TMP/child-start-kill.out" 2>&1 &
 CHILD_START_PARENT_PID=$!
 kill_wait=0
@@ -420,6 +439,7 @@ set -e
 active_child_pid=$(cat "$KILL_PARENT_MARKER")
 recorded_child_pid=$(sed -n 's/^pid=//p' "$MOD/scripts/.dncs.lock/child" | head -n 1)
 [ "$recorded_child_pid" = "$active_child_pid" ]
+[ "$(stat -c %a "$MOD/scripts/.dncs.lock/child")" = 600 ]
 [ -f "$MOD/scripts/.dncs.txn" ]
 [ -d "$MOD/scripts/.dncs.lock" ]
 wait_started=$(date +%s)
