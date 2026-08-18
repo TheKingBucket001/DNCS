@@ -1,6 +1,6 @@
 {
-  "version": "0.2.0",
-  "versionCode": 3,
-  "zipUrl": "https://github.com/TheKingBucket001/DNCS/releases/download/v0.2.0/dncs-0.2.0.zip",
-  "changelog": "## 改进\n\n- 修复输入法弹出时底部标语被顶起的问题。\n- 保持底部标语原位，不产生额外滚动区域。"
+  "version": "0.2.1",
+  "versionCode": 4,
+  "zipUrl": "https://github.com/TheKingBucket001/DNCS/releases/download/v0.2.1/dncs-0.2.1.zip",
+  "changelog": "## 性能与兼容性\n\n- 优化 UID 规则应用速度，减少只读防火墙查询的固定开销。\n- 保留规则提交、事务回滚和双栈失败恢复保护。\n- 优化多用户 Package Manager 扫描，仅查询目标用户资料。"
 }
