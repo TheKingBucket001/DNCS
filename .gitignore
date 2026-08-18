@@ -24,6 +24,7 @@ node_modules/
 /module/scripts/ipt_err.*
 /module/scripts/ipt_out.*
 /module/scripts/user.tmp*
+/module/scripts/user.targets.*
 /module/scripts/users.tmp*
 /module/scripts/package.tmp*
 /module/scripts/config_uids.*

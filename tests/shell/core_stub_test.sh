@@ -23,6 +23,9 @@ if [ "${REQUIRE_PIPE_STDOUT:-0}" = 1 ]; then
     *) exit 43 ;;
   esac
 fi
+if [ -n "${CMD_TRACE:-}" ]; then
+  printf '%s\n' "$*" >> "$CMD_TRACE"
+fi
 if [ "$1 $2 $3" = "package list users" ]; then
   [ "${FAIL_USERS:-0}" = 1 ] && exit 41
   if [ "${SLOW_USERS:-0}" = 1 ] && [ ! -e "$SLOW_USERS_ONCE" ]; then
@@ -189,6 +192,7 @@ export COMMIT_TRACE="$TMP/commit-trace"
 export KILL_PARENT_ONCE="$TMP/kill-parent-once"
 export KILL_PARENT_MARKER="$TMP/kill-parent-marker"
 export KILL_PARENT_DONE="$TMP/kill-parent-done"
+export CMD_TRACE="$TMP/cmd-trace"
 export REQUIRE_PIPE_STDOUT=1
 
 out=$(sh "$MOD/scripts/core.sh" list)
@@ -200,13 +204,19 @@ grep -q 'com.user.alpha .*|110123|user|0|10|com.user.alpha' "$MOD/webroot/apps.t
 grep -q 'com.shared.a|1000|shared|0' "$MOD/webroot/apps.txt"
 grep -q 'com.user.shared.a|10150|shared|0' "$MOD/webroot/apps.txt"
 grep -q 'com.user.shared.b|10150|shared|0' "$MOD/webroot/apps.txt"
+[ ! -s "$MOD/webroot/apps.txt" ] && exit 1
+if grep -q '__DNCS_CMD_STATUS_' "$MOD/webroot/apps.txt"; then exit 1; fi
 [ ! -e "$MOD/webroot/apps.txt.tmp" ]
 
+: > "$CMD_TRACE"
 out=$(sh "$MOD/scripts/core.sh" apply 10123 999999 10123)
 [ "$out" = 'SUCCESS:1:2:10123' ]
 grep -qx '10123' "$MOD/scripts/blocked.conf"
 if grep -q '999999' "$MOD/scripts/blocked.conf"; then exit 1; fi
 grep -q -- '--uid-owner 10123' "$TMP_RESTORE4"
+grep -qx 'package list users' "$CMD_TRACE"
+grep -qx 'package list packages -U --user 0' "$CMD_TRACE"
+[ "$(wc -l < "$CMD_TRACE" | tr -d ' ')" -eq 2 ]
 
 mkdir -p "$TMP/modules_update/dncs"
 set +e
@@ -314,7 +324,7 @@ set -e
 cmp "$TMP/apps.before" "$MOD/webroot/apps.txt"
 
 set +e
-out=$(FAIL_USER_10=1 sh "$MOD/scripts/core.sh" apply 1000 2>/dev/null)
+out=$(FAIL_USER_10=1 sh "$MOD/scripts/core.sh" apply 110123 2>/dev/null)
 rc=$?
 set -e
 [ "$rc" -ne 0 ]

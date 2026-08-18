@@ -6,7 +6,6 @@ import {
   CATEGORIES,
   SearchMode,
   badgeKind,
-  filterApps,
   groupSharedApps,
   isEffectivelyBlocked,
   mergeBlocked,
@@ -17,6 +16,12 @@ import { resolveApplyExecution, runCore } from './shell';
 import type { ApplyResolution } from './shell';
 
 let allApps: AppInfo[] = [];
+let appsCacheText = '';
+const appsByCategory: Record<AppType, AppInfo[]> = {
+  user: [],
+  system: [],
+  shared: []
+};
 let currentBlocked = new Set<string>();
 let pendingChanges: Record<string, boolean> = {};
 let currentCategory: AppType = 'user';
@@ -124,6 +129,28 @@ function createStatusElement(message: string): HTMLElement {
   empty.className = 'empty-state';
   empty.textContent = message;
   return empty;
+}
+
+function rebuildAppIndex(apps: AppInfo[]): void {
+  for (const category of CATEGORIES) appsByCategory[category] = [];
+  for (const app of apps) appsByCategory[app.type].push(app);
+  for (const category of CATEGORIES) {
+    appsByCategory[category].sort((left, right) => left.pkg.localeCompare(right.pkg, 'zh-CN'));
+  }
+}
+
+function getVisibleApps(category: AppType, blocked: Set<string>): AppInfo[] {
+  const normalized = searchQuery.trim().toLowerCase();
+  const prioritized: AppInfo[] = [];
+  const remaining: AppInfo[] = [];
+
+  for (const app of appsByCategory[category]) {
+    if (normalized && !(searchMode === 'pkg' ? app.pkg.toLowerCase().includes(normalized) : app.uid.includes(normalized))) {
+      continue;
+    }
+    (blocked.has(app.uid) ? prioritized : remaining).push(app);
+  }
+  return prioritized.concat(remaining);
 }
 
 function setStatus(message: string): void {
@@ -458,7 +485,7 @@ function renderSharedGroup(uid: string, apps: AppInfo[]): HTMLElement {
 
 function createListFragment(category: AppType): DocumentFragment {
   const effectiveBlocked = new Set(mergeBlocked(currentBlocked, pendingChanges));
-  const filtered = filterApps(allApps, category, searchQuery, searchMode, effectiveBlocked);
+  const filtered = getVisibleApps(category, effectiveBlocked);
   const fragment = document.createDocumentFragment();
 
   if (filtered.length === 0) {
@@ -592,10 +619,18 @@ async function loadCachedApps(showMissing = true, clearPending = true): Promise<
   try {
     const response = await fetch(`apps.txt?t=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(String(response.status));
-    const parsed = parseAppsText(await response.text());
+    const raw = await response.text();
+    if (raw === appsCacheText && allApps.length > 0) {
+      if (clearPending) pendingChanges = {};
+      updateUIState();
+      return true;
+    }
+    const parsed = parseAppsText(raw);
     if (parsed.apps.length === 0) throw new Error('EMPTY_APPS_CACHE');
     if (parsed.invalidRows > 0) throw new Error('INVALID_APPS_CACHE');
     allApps = parsed.apps;
+    rebuildAppIndex(allApps);
+    appsCacheText = raw;
     currentBlocked = parsed.blocked;
     if (clearPending) pendingChanges = {};
     updateUIState();
@@ -631,7 +666,7 @@ async function refreshData(options: RefreshOptions = {}): Promise<boolean> {
   if (isBusy && !internal) return false;
   if (!internal) setBusyState(true);
   setRuleStateKnown(false);
-  setStatus(status);
+  if (allApps.length === 0) setStatus(status);
   try {
     await yieldForPaint();
     const result = (await runCore(exec, 'list')).trim();
@@ -1027,6 +1062,11 @@ function bindEvents(): void {
   });
 }
 
+async function initializeData(): Promise<void> {
+  await loadCachedApps(false);
+  await refreshData({ toast: false });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   try {
     enableEdgeToEdgeCompat(true);
@@ -1037,5 +1077,5 @@ document.addEventListener('DOMContentLoaded', () => {
   bindEvents();
   updatePageChrome('main');
   updateUIState();
-  void refreshData({ toast: false });
+  void initializeData();
 });

@@ -182,8 +182,11 @@ describe('Miuix Web layout contract', () => {
     expect(main).toContain('logRequestSequence');
     expect(main).toContain('ruleStateKnown');
     expect(main).toContain('let ruleStateKnown = false');
-    expect(main).toMatch(/setRuleStateKnown\(false\);\s*setStatus\(status\)/);
+    expect(main).toMatch(/setRuleStateKnown\(false\);\s*if \(allApps\.length === 0\) setStatus\(status\)/);
     expect(main).toContain('allowCachedFallback');
+    expect(main).toContain('async function initializeData');
+    expect(main).toContain('rebuildAppIndex(allApps)');
+    expect(main).toContain('getVisibleApps(category, effectiveBlocked)');
     expect(main).toContain('pushOverlayHistory');
     expect(main).toContain("overlay?: 'confirm' | 'log' | 'menu'");
     expect(main).toContain('runAfterMenuClose');

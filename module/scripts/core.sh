@@ -127,6 +127,8 @@ cleanup_tmp() {
     "$CONF_FILE.$$.new" \
     "$SCRIPT_DIR/user.tmp.$$" \
     "$SCRIPT_DIR/user.tmp.$$.all" \
+    "$SCRIPT_DIR/user.targets.$$" \
+    "$SCRIPT_DIR/user.targets.$$.all" \
     "$SCRIPT_DIR/users.tmp.$$" \
     "$SCRIPT_DIR/package.tmp.$$" \
     "$SCRIPT_DIR/config_uids.$$" \
@@ -146,6 +148,7 @@ cleanup_stale_tmp() {
     "$CONF_FILE."*.tmp \
     "$CONF_FILE."*.new \
     "$SCRIPT_DIR/user.tmp."* \
+    "$SCRIPT_DIR/user.targets."* \
     "$SCRIPT_DIR/users.tmp."* \
     "$SCRIPT_DIR/package.tmp."* \
     "$SCRIPT_DIR/config_uids."* \
@@ -460,16 +463,26 @@ list_users() {
 capture_package_output() {
   _capture_file=$1
   shift
-  _capture_output=$("$CMD_PACKAGE_CMD" "$@" 2>/dev/null)
+  _capture_marker="__DNCS_CMD_STATUS_$$"
+  {
+    "$CMD_PACKAGE_CMD" "$@" 2>/dev/null
+    _capture_rc=$?
+    printf '\n%s:%s\n' "$_capture_marker" "$_capture_rc"
+  } | awk -v marker="$_capture_marker" '
+    index($0, marker ":") == 1 {
+      status = substr($0, length(marker) + 2)
+      found = 1
+      next
+    }
+    { print }
+    END {
+      if (!found || status !~ /^[0-9]+$/ || status != 0) exit 1
+    }
+  ' > "$_capture_file"
   _capture_rc=$?
   if [ "$_capture_rc" -ne 0 ]; then
     rm -f "$_capture_file" 2>/dev/null
-    return "$_capture_rc"
-  fi
-  if [ -n "$_capture_output" ]; then
-    printf '%s\n' "$_capture_output" > "$_capture_file"
-  else
-    : > "$_capture_file"
+    return 1
   fi
 }
 
@@ -628,11 +641,31 @@ backup_config() {
 
 collect_valid_uids() {
   _out=$1
-  _users_file="$SCRIPT_DIR/users.tmp.$$"
+  shift
+  _available_users_file="$SCRIPT_DIR/users.tmp.$$"
+  _requested_users_file="$SCRIPT_DIR/user.targets.$$"
+  _selected_users_file="$SCRIPT_DIR/user.targets.$$.all"
   _package_file="$SCRIPT_DIR/package.tmp.$$"
   _scan_ok=1
   : > "$_out"
-  list_users > "$_users_file" || { rm -f "$_users_file" "$_package_file"; return 1; }
+
+  # An empty target set needs no Package Manager access. For nonempty rules,
+  # scan only user profiles that can own one of the requested Android UIDs.
+  [ "$#" -gt 0 ] || return 0
+  if ! printf '%s\n' "$@" | awk '{ user = int(($1 + 0) / 100000); if (!seen[user]++) print user }' > "$_requested_users_file"; then
+    rm -f "$_available_users_file" "$_requested_users_file" "$_selected_users_file" "$_package_file"
+    return 1
+  fi
+  if ! list_users > "$_available_users_file"; then
+    rm -f "$_available_users_file" "$_requested_users_file" "$_selected_users_file" "$_package_file"
+    return 1
+  fi
+  if ! awk 'NR == FNR { available[$1] = 1; next } available[$1] && !seen[$1]++ { print }' \
+    "$_available_users_file" "$_requested_users_file" > "$_selected_users_file"; then
+    rm -f "$_available_users_file" "$_requested_users_file" "$_selected_users_file" "$_package_file"
+    return 1
+  fi
+
   while IFS= read -r _u; do
     [ -n "$_u" ] || continue
     if ! capture_package_output "$_package_file" package list packages -U --user "$_u"; then
@@ -641,10 +674,10 @@ collect_valid_uids() {
     fi
     awk -F 'uid:' 'NF > 1 { sub(/[[:space:]].*/, "", $2); if ($2 ~ /^(0|[1-9][0-9]*)$/ && length($2) <= 10 && ($2 + 0) <= 2147483647 && !seen[$2]++) print $2 }' \
       "$_package_file" >> "$_out" || { _scan_ok=0; break; }
-  done < "$_users_file"
-  rm -f "$_users_file" "$_package_file"
+  done < "$_selected_users_file"
+  rm -f "$_available_users_file" "$_requested_users_file" "$_selected_users_file" "$_package_file"
   [ "$_scan_ok" -eq 1 ] || return 1
-  [ -s "$_out" ]
+  return 0
 }
 
 wait_option_unsupported() {
@@ -981,28 +1014,28 @@ write_apps_cache() {
       if (pkg == "" || user_id == "") next
 
       if (type_str == "USER") user_app[pkg] = 1
-      user_pkg_uid[user_id ":" pkg] = uid
-      users[user_id] = 1
-      pkgs[pkg] = 1
-      if (!uid_pkg_seen[uid ":" pkg]++) uid_pkg_count[uid]++
+      key = user_id SUBSEP pkg
+      if (!(key in user_pkg_uid)) record_order[++record_count] = key
+      user_pkg_uid[key] = uid
+      if (!uid_pkg_seen[uid SUBSEP pkg]++) uid_pkg_count[uid]++
     }
     END {
-      for (pkg in pkgs) {
-        for (user_id in users) {
-          key = user_id ":" pkg
-          if (!(key in user_pkg_uid)) continue
-          uid = user_pkg_uid[key]
-          app_type = "system"
-          if (uid_pkg_count[uid] > 1) app_type = "shared"
-          else if (user_app[pkg]) app_type = "user"
+      for (record_index = 1; record_index <= record_count; record_index++) {
+        key = record_order[record_index]
+        split(key, identity, SUBSEP)
+        user_id = identity[1]
+        pkg = identity[2]
+        uid = user_pkg_uid[key]
+        app_type = "system"
+        if (uid_pkg_count[uid] > 1) app_type = "shared"
+        else if (user_app[pkg]) app_type = "user"
 
-          label = pkg
-          if (user_id != "0") label = pkg " (分身:" user_id ")"
-          printf "%s|%s|%s|%d|%s|%s\n", label, uid, app_type, (block[uid] ? 1 : 0), user_id, pkg
-        }
+        label = pkg
+        if (user_id != "0") label = pkg " (分身:" user_id ")"
+        printf "%s|%s|%s|%d|%s|%s\n", label, uid, app_type, (block[uid] ? 1 : 0), user_id, pkg
       }
     }
-  ' "$_tmp_all" | LC_ALL=C sort -t '|' -k3,3 -k1,1 > "$_apps_tmp"; then
+  ' "$_tmp_all" > "$_apps_tmp"; then
     log_msg ERROR "Package scan ERROR: failed to generate apps cache"
     rm -f "$_tmp_all" "$_apps_tmp"
     return 1
@@ -1077,7 +1110,7 @@ apply_config() {
   fi
   sanitize_uids "$@" > "$_tmp_conf" || { log_msg ERROR "Apply ERROR: failed to write temp config"; printf 'FS_ERROR\n'; return 1; }
   _requested=$(awk 'NF { c++ } END { print c + 0 }' "$_tmp_conf")
-  if ! collect_valid_uids "$_tmp_user"; then
+  if ! collect_valid_uids "$_tmp_user" "$@"; then
     log_msg ERROR "PMS ERROR: complete valid UID list unavailable; config unchanged"
     rm -f "$_tmp_conf" "$_tmp_user" "$_new_conf"
     printf 'PMS_ERROR\n'
